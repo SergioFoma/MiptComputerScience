@@ -9,6 +9,10 @@ int ParseArray(char** array, size_t len, int num);
 
 int ParseLine(char* line, int num);
 
+int WordCounter(char* line, size_t len);
+
+void ReverseLine(char* line, size_t len);
+
 char** ReadLines(size_t* len);
 
 int main(int argc, char** argv) {
@@ -111,18 +115,10 @@ int ParseLine(char* line, int num) {
 
     int error_code = 0;
     size_t len = strlen(line);
-    
-    int word_count = 1;
-    for (size_t index = 0; index < len; ++index) {
-        if (line[index] == ' ') ++word_count;
-    }
+    int word_count = WordCounter(line, len);
+   
+    ReverseLine(line, len);
 
-    for (size_t index = 0; index < len / 2; ++index) {
-        char tmp = line[index];
-        line[index] = line[len - index - 1];
-        line[len - index - 1] = tmp;
-    }
-    
     num = word_count - num;
     char* start = line;
     char* end = start;
@@ -149,11 +145,29 @@ int ParseLine(char* line, int num) {
             start[index] = start[word_len - 1 - index];
             start[word_len - 1 - index] = tmp;
         }
-
         start = end + 1;
     }
 
     return error_code;
 }
 
+int WordCounter(char* line, size_t len) {
+    assert(line);
 
+    int word_count = 1;
+    for (size_t index = 0; index < len; ++index) {
+        if (line[index] == ' ') ++word_count;
+    }
+    
+    return word_count;
+}
+
+void ReverseLine(char* line, size_t len) {
+    assert(line);
+
+    for (size_t index = 0; index < len / 2; ++index) {
+        char tmp = line[index];
+        line[index] = line[len - index - 1];
+        line[len - index - 1] = tmp;
+    }
+}
