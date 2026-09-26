@@ -74,42 +74,119 @@ int OpenFile(const char* file_path, int* error_code) {
 int ReadingData(user_info_t* user_info) {
   assert(user_info);
     
-  ssize_t res = 0;
   int time_sleep = 3;
+  time_t last_read_time = 0;
 
   while (1) {
-    lseek(user_info->file_fd, 0, SEEK_SET);
-
-    size_t file_sz = GetFileSize(user_info->file_fd);
-  
-    if (file_sz == 0) {
-      sleep(time_sleep);
-      continue;
-    }
-
-    char* buf = (char*)calloc(file_sz + 1, sizeof(char));
+    size_t file_sz = 0;
+    
+    char* buf = LoadFileToBuffer(user_info->file_fd, &file_sz);
+    
     if (!buf) {
-      return -1;
+      sleep(time_sleep);
+      continue; 
     }
 
-    res = read(user_info->file_fd, buf, file_sz);
-    buf[file_sz] = '\0';
+    // find last message
+    time_t max_time_in_file = ProcessNewMessages(buf, last_read_time, user_info->sender_name);
 
-    if (res <= 0) {
-      free(buf);
-      continue;
-    }
+    // clear old messages
+    CleanOldMessages(user_info->file_fd, buf, last_read_time);
 
-    time_t current_time = time(NULL);
-
-    ScanMessHistory(file_sz, buf, user_info);
+    // update last message
+    last_read_time = max_time_in_file;
 
     free(buf);
-
     sleep(time_sleep);
   }
 
   return 0;
+}
+
+char* LoadFileToBuffer(int file_fd, size_t* out_file_sz) {
+  assert(out_file_sz);
+
+  lseek(file_fd, 0, SEEK_SET);
+  size_t file_sz = GetFileSize(file_fd);
+  *out_file_sz = file_sz;
+
+  if (file_sz == 0) {
+    return NULL;
+  }
+
+  char* buf = (char*)calloc(file_sz + 1, sizeof(char));
+  if (!buf) {
+    return NULL;
+  }
+
+  ssize_t res = read(file_fd, buf, file_sz);
+  if (res <= 0) {
+    free(buf);
+    return NULL;
+  }
+
+  buf[res] = '\0';
+  return buf;
+}
+
+time_t ProcessNewMessages(const char* buf, time_t last_read_time, const char* current_user) {
+  assert(buf);
+  assert(current_user);
+
+  const char* chunk_begin = buf;
+  time_t max_time_in_file = last_read_time;
+
+  while (chunk_begin && *chunk_begin != '\0') {
+    if (strchr(chunk_begin, '[') && strchr(chunk_begin, '<')) {
+
+      message_info_t tokens = ScanMetadata((char*)chunk_begin);
+
+      if (tokens.sending_time > last_read_time) {
+        if (tokens.recipient_name && strcmp(current_user, tokens.recipient_name) == 0) {
+          printf("%s\n", tokens.message);
+          fflush(stdout);
+        }
+        
+        if (tokens.sending_time > max_time_in_file) {
+          max_time_in_file = tokens.sending_time;
+        }
+      }
+      FreeTokens(&tokens);
+    }
+    chunk_begin = strchr(chunk_begin, '\n');
+    if (chunk_begin) ++chunk_begin;
+  }
+
+  return max_time_in_file;
+}
+
+void CleanOldMessages(int file_fd, const char* buf, time_t last_read_time) {
+  assert(buf);
+
+  lseek(file_fd, 0, SEEK_SET);
+  
+  const char* chunk_begin = buf;
+  off_t new_file_size = 0;
+
+  while (chunk_begin && *chunk_begin != '\0') {
+    const char* next_chunk = strchr(chunk_begin, '\n');
+    size_t line_len = next_chunk ? (size_t)(next_chunk - chunk_begin + 1) : strlen(chunk_begin);
+
+    if (strchr(chunk_begin, '[') && strchr(chunk_begin, '<')) {
+      message_info_t tokens = ScanMetadata((char*)chunk_begin);
+
+      if (tokens.sending_time > last_read_time) {
+        write(file_fd, chunk_begin, line_len);
+        new_file_size += line_len;
+      }
+      FreeTokens(&tokens);
+    }
+    
+    chunk_begin = next_chunk ? next_chunk + 1 : NULL;
+  }
+
+  // Обрезаем файл под новый размер оставшихся сообщений
+  ftruncate(file_fd, new_file_size);
 }
 
 size_t GetFileSize(int file_fd) {

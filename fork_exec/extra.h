@@ -34,6 +34,12 @@ message_info_t ScanMetadata(char* line);
 
 size_t GetFileSize(int file_fd);
 
+char* LoadFileToBuffer(int file_fd, size_t* out_file_sz);
+
+time_t ProcessNewMessages(const char* buf, time_t last_read_time, const char* current_user);
+
+void CleanOldMessages(int file_fd, const char* buf, time_t max_time_in_file);
+
 void ScanMessHistory(size_t file_sz, char* buf, user_info_t* user_info);
 
 #endif
